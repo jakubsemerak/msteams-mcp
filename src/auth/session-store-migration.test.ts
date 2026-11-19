@@ -14,7 +14,7 @@ vi.mock('./keychain.js', () => ({
   getOrCreateKeychainKey: () => getOrCreateKeychainKey(),
 }));
 
-const { readTokenCache, TOKEN_CACHE_PATH, ensureConfigDir } = await import('./session-store.js');
+const { readTokenCache, writeTokenCache, TOKEN_CACHE_PATH, ensureConfigDir } = await import('./session-store.js');
 
 const cache = { substrateToken: 'eyJ.tok', substrateTokenExpiry: 1, extractedAt: 2 };
 
@@ -42,6 +42,15 @@ describe('legacy session file migration', () => {
     getOrCreateKeychainKey.mockImplementation(() => { throw new Error('Keychain locked'); });
 
     readTokenCache();
+
+    expect(fs.readFileSync(TOKEN_CACHE_PATH, 'utf8')).toBe(before);
+  });
+
+  it('does not rewrite a file that already uses the Keychain key', () => {
+    writeTokenCache(cache);
+    const before = fs.readFileSync(TOKEN_CACHE_PATH, 'utf8');
+
+    expect(readTokenCache()).toEqual(cache);
 
     expect(fs.readFileSync(TOKEN_CACHE_PATH, 'utf8')).toBe(before);
   });

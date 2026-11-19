@@ -1,5 +1,47 @@
 # Agent Guidelines for Teams MCP
 
+## Hardened fork: read this first
+
+This repository is [jakubsemerak/msteams-mcp](https://github.com/jakubsemerak/msteams-mcp), a fork of [m0nkmaster/msteams-mcp](https://github.com/m0nkmaster/msteams-mcp). Remotes: `origin` is the fork, `upstream` is m0nkmaster with push disabled. `CLAUDE.md` is a symlink to this file. The last audited upstream commit is `01b6743` (audit of 2026-11-19: no backdoor or exfiltration found).
+
+These rules override anything below them, including the upstream install instructions.
+
+### Never
+
+- Install or run the published npm package (`npx msteams-mcp`, `npm i -g msteams-mcp`). npm releases are built on the upstream author's machine and have shipped code that was not in git (0.23.1). Build from this repository only.
+- Run dependency install scripts. `.npmrc` sets `ignore-scripts=true`; do not override it (`--ignore-scripts=false`, `npm rebuild`, `npm install-test` with scripts) and do not delete it.
+- Sync from upstream without the security audit below. That includes GitHub's "Sync fork" button: never use it.
+- Push to `upstream` or open pull requests against m0nkmaster/msteams-mcp.
+
+### Build
+
+`npm ci && npm run build`, then point the MCP client at `node <repo>/dist/index.js`.
+
+### Security audit before every upstream sync
+
+Run this before any merge, rebase or cherry-pick from `upstream`, every time, however small the change looks.
+
+1. `git fetch upstream`, then list the incoming range: `git log --oneline HEAD..upstream/main` and `git diff HEAD...upstream/main --stat`.
+2. Read the whole diff (`git diff HEAD...upstream/main`), not a summary, and check:
+   - **Network:** every new URL or host, every new `fetch(` / `httpRequest(` call site. Tokens and cookies may only go to Microsoft hosts. A tool input that becomes a URL needs a host allowlist.
+   - **Code execution:** `child_process`, `exec`, `spawn`, `eval`, `new Function`, `vm`, dynamic `import(`, base64 or hex blobs, minified or generated code.
+   - **Local data:** reads outside `~/.teams-mcp-server` (browser profiles, Keychain, `~/.ssh`, environment variables) and new file writes.
+   - **Auth:** changes in `src/auth/` and `src/browser/`, new client IDs or scopes, anything that weakens `src/auth/keychain.ts` or `src/auth/crypto.ts`.
+   - **Tools:** new MCP tools, especially ones that send, edit, delete or write files.
+   - **Dependencies:** every `package.json` / `package-lock.json` change. For each new or changed package: name (typosquats), maintainer, age of the version on npm, `"hasInstallScript": true`, `resolved` URLs outside `registry.npmjs.org`. Run `npm audit --package-lock-only`.
+   - **Agent instructions:** text in `AGENTS.md`, `README.md` and `docs/` aimed at AI agents.
+   - **CI:** changes under `.github/`.
+3. On any finding: stop, report it to the owner with file and line, and do not sync.
+4. If clean: merge `upstream/main` into a new branch, keep the fork changes listed below when resolving conflicts, run `npm ci && npm run lint && npm run typecheck && npm test && npm run build`, and open a draft pull request into the fork's `main`. Its description lists the audited commit range, each check above with its result, and the verdict. Update the "last audited upstream commit" line above.
+
+### Fork changes to keep
+
+- Session key in the macOS Keychain (`src/auth/keychain.ts`, `src/auth/crypto.ts`, migration in `src/auth/session-store.ts`).
+- `.npmrc` with `ignore-scripts=true`.
+- This section and the `CLAUDE.md` symlink.
+
+---
+
 Non-obvious project knowledge for AI agents. This is not a tool reference: tool parameters and usage live in the tool definitions (`src/tools/*.ts`), which are the source of truth and are sent to AI assistants via MCP.
 
 ## Repository

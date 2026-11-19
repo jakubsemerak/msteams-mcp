@@ -13,7 +13,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { encrypt, decrypt } from './crypto.js';
+import { encrypt, decrypt, needsMigration, type EncryptedData } from './crypto.js';
 import { decryptStorageState } from './msal-cache-crypto.js';
 import { SESSION_EXPIRY_HOURS, TEAMS_HOSTS } from '../constants.js';
 import * as log from '../utils/logger.js';
@@ -84,7 +84,10 @@ function writeSecure(filePath: string, data: unknown): void {
 function readSecure<T>(filePath: string): T | null {
   if (!fs.existsSync(filePath)) return null;
   try {
-    return JSON.parse(decrypt(JSON.parse(fs.readFileSync(filePath, 'utf8')))) as T;
+    const encrypted = JSON.parse(fs.readFileSync(filePath, 'utf8')) as EncryptedData;
+    const data = JSON.parse(decrypt(encrypted)) as T;
+    if (needsMigration(encrypted)) writeSecure(filePath, data);
+    return data;
   } catch (error) {
     log.error('session-store', `Failed to read ${filePath}: ${error instanceof Error ? error.message : error}`);
     return null;

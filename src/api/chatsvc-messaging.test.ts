@@ -18,6 +18,8 @@ import {
   clampWaitParams,
   selectNewMessages,
   resolveWaitBaseline,
+  selectNewReactions,
+  nextWaitCursor,
   senderMriFromChatsvc,
   generateClientMessageId,
   buildThreadMessagesUrl,
@@ -362,6 +364,49 @@ describe('selectNewMessages', () => {
 
   it('returns empty when nothing is newer than afterId', () => {
     expect(selectNewMessages(msgs, 110, true)).toEqual([]);
+  });
+});
+
+describe('selectNewReactions', () => {
+  const me = '8:orgid:me';
+  const msgs = [
+    {
+      id: '100',
+      reactions: [
+        { key: 'like', user: { mri: '8:orgid:other', displayName: 'Other' }, time: 150 },
+        { key: 'laugh', user: { mri: me }, time: 160 },
+        { key: 'heart', user: { mri: '8:orgid:other' }, time: 90 },
+        { key: 'sad', user: { mri: '8:orgid:other' } }, // no time: cannot be ordered, ignored
+      ],
+    },
+    { id: '120', reactions: [{ key: 'heart', user: { mri: '8:orgid:third' }, time: 130 }] },
+    { id: '130' },
+  ];
+
+  it('returns reactions by others added after afterTime, oldest first, with their message id', () => {
+    expect(selectNewReactions(msgs, 100, false, me)).toEqual([
+      { messageId: '120', key: 'heart', user: { mri: '8:orgid:third' }, time: 130 },
+      { messageId: '100', key: 'like', user: { mri: '8:orgid:other', displayName: 'Other' }, time: 150 },
+    ]);
+  });
+
+  it('includes own reactions when includeSelf is true', () => {
+    expect(selectNewReactions(msgs, 140, true, me).map(r => r.key)).toEqual(['like', 'laugh']);
+  });
+
+  it('returns empty when no reaction is newer than afterTime', () => {
+    expect(selectNewReactions(msgs, 160, true, me)).toEqual([]);
+  });
+});
+
+describe('nextWaitCursor', () => {
+  it('keeps the baseline when nothing new arrived', () => {
+    expect(nextWaitCursor(100, [], [])).toBe('100');
+  });
+
+  it('advances past the newest message or reaction, whichever is later', () => {
+    expect(nextWaitCursor(100, [{ id: '110' }], [{ time: 150 }])).toBe('150');
+    expect(nextWaitCursor(100, [{ id: '170' }], [{ time: 150 }])).toBe('170');
   });
 });
 

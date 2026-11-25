@@ -515,7 +515,7 @@ const listChatsToolDefinition: Tool = {
 
 const waitForReplyToolDefinition: Tool = {
   name: 'teams_wait_for_reply',
-  description: 'Block until a new message arrives in a conversation, then return only the new messages. Polls server-side so you make one tool call instead of repeatedly reading the thread. Read-only and idempotent: it never posts (pair it with teams_send_message), and re-running with after=nextAfter resumes from the same point. The block is capped (~110s) to stay under client timeouts; on timeout it returns timedOut=true with nextAfter — just call again to keep waiting. By default the baseline is your most recent message, so after a teams_send_message you can call this with no "after" to wait for the reply.',
+  description: 'Block until a new message or reaction arrives in a conversation, then return only what is new: newMessages, plus newReactions added to the recently fetched messages (a reply is often just a 👍 on your message). Polls server-side so you make one tool call instead of repeatedly reading the thread. Read-only and idempotent: it never posts (pair it with teams_send_message), and re-running with after=nextAfter resumes from the same point. The block is capped (~110s) to stay under client timeouts; on timeout it returns timedOut=true with nextAfter — just call again to keep waiting. By default the baseline is your most recent message, so after a teams_send_message you can call this with no "after" to wait for the reply.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -529,7 +529,7 @@ const waitForReplyToolDefinition: Tool = {
       },
       after: {
         type: 'string',
-        description: 'Only return messages newer than this message ID (the resume cursor). Defaults to your most recent message in the thread. Pass the nextAfter value from a previous timed-out response to continue waiting.',
+        description: 'Only return messages and reactions newer than this cursor (a message ID; message IDs are arrival times in epoch ms). Defaults to your most recent message in the thread. Pass the nextAfter value from a previous response to continue waiting.',
       },
       maxWaitSeconds: {
         type: 'number',
@@ -541,7 +541,7 @@ const waitForReplyToolDefinition: Tool = {
       },
       includeSelf: {
         type: 'boolean',
-        description: 'Include your own messages in the result (default false, since you are usually waiting for someone else\'s reply).',
+        description: 'Include your own messages and reactions in the result (default false, since you are usually waiting for someone else\'s reply).',
       },
     },
   },
@@ -1115,10 +1115,12 @@ async function handleWaitForReply(
       nextAfter: value.nextAfter,
       count: value.newMessages.length,
       newMessages: value.newMessages,
+      reactionCount: value.newReactions.length,
+      newReactions: value.newReactions,
       polls: value.polls,
       waitedSeconds: value.waitedSeconds,
       note: value.timedOut
-        ? 'No new messages yet. Call teams_wait_for_reply again with after set to nextAfter to keep waiting.'
+        ? 'No new messages or reactions yet. Call teams_wait_for_reply again with after set to nextAfter to keep waiting.'
         : undefined,
     },
   };

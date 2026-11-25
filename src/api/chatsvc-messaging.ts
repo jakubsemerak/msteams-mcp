@@ -1382,6 +1382,8 @@ export interface WaitForReplyResult {
   nextAfter: string;
   /** The new messages that arrived (oldest first), or empty on timeout. */
   newMessages: ThreadMessage[];
+  /** Reactions added after the baseline to the fetched messages (oldest first). */
+  newReactions: NewReaction[];
   /** How many poll iterations ran. */
   polls: number;
   /** How many seconds the wait blocked for. */
@@ -1396,7 +1398,7 @@ export interface WaitForReplyOptions {
   maxWaitSeconds?: number;
   /** Seconds between polls. */
   intervalSeconds?: number;
-  /** Include the caller's own messages in the result (default false). */
+  /** Include the caller's own messages and reactions in the result (default false). */
   includeSelf?: boolean;
   /** Messages fetched per poll (default 50). */
   limit?: number;
@@ -1458,12 +1460,52 @@ export function resolveWaitBaseline(
   return ownMax > 0 ? ownMax : anyMax;
 }
 
+/** A reaction that arrived during a wait, with the message it was added to. */
+export interface NewReaction extends Reaction {
+  messageId: string;
+  time: number;
+}
+
 /** chatsvc sends `from` as a contact URL ending in the MRI; returns the bare MRI. */
 export function senderMriFromChatsvc(from: string | undefined): string {
   if (!from) return '';
   const marker = '/contacts/';
   const index = from.lastIndexOf(marker);
   return index >= 0 ? from.slice(index + marker.length) : from;
+}
+
+/**
+ * Selects reactions added after `afterTime` (epoch ms), oldest first. Message IDs
+ * are arrival times in epoch ms, so the wait baseline doubles as the time cursor.
+ * Excludes the caller's own reactions unless `includeSelf` is set. Pure.
+ */
+export function selectNewReactions(
+  messages: readonly { id: string; reactions?: Reaction[] }[],
+  afterTime: number,
+  includeSelf: boolean,
+  selfMri: string
+): NewReaction[] {
+  const result: NewReaction[] = [];
+  for (const message of messages) {
+    for (const reaction of message.reactions ?? []) {
+      if (reaction.time === undefined || reaction.time <= afterTime) continue;
+      if (!includeSelf && reaction.user.mri === selfMri) continue;
+      result.push({ ...reaction, messageId: message.id, time: reaction.time });
+    }
+  }
+  return result.sort((a, b) => a.time - b.time);
+}
+
+/** Resume cursor after a wait: the newest returned message ID or reaction time. Pure. */
+export function nextWaitCursor(
+  afterId: number,
+  messages: readonly { id: string }[],
+  reactions: readonly { time: number }[]
+): string {
+  let cursor = afterId;
+  for (const m of messages) cursor = Math.max(cursor, parseMessageId(m.id) ?? 0);
+  for (const r of reactions) cursor = Math.max(cursor, r.time);
+  return String(cursor);
 }
 
 const sleep = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
@@ -1510,13 +1552,18 @@ export async function waitForReply(
   const deadline = start + maxWait * 1000;
   let polls = 0;
   let newMessages: ThreadMessage[] = [];
+  let newReactions: NewReaction[] = [];
+  const authResult = requireMessageAuth();
+  if (!authResult.ok) return authResult;
+  const selfMri = authResult.value.userMri;
 
   for (;;) {
     polls++;
     const page = await getThreadMessages(conversationId, { limit, order: 'asc' });
     if (!page.ok) return page;
     newMessages = selectNewMessages(page.value.messages, afterId, includeSelf);
-    if (newMessages.length > 0) break;
+    newReactions = selectNewReactions(page.value.messages, afterId, includeSelf, selfMri);
+    if (newMessages.length > 0 || newReactions.length > 0) break;
     const remaining = deadline - Date.now();
     if (remaining <= 0) break;
     await sleep(Math.min(interval * 1000, remaining));
@@ -1526,16 +1573,15 @@ export async function waitForReply(
   // messages arrive between two polls the surplus is re-fetched next call by id;
   // a burst larger than `limit` could strand the oldest — upgrade to a
   // backfill scan (like the Rust CLI) only if that proves to matter.
-  const nextAfter = newMessages.length > 0
-    ? newMessages[newMessages.length - 1].id
-    : String(afterId);
+  const nextAfter = nextWaitCursor(afterId, newMessages, newReactions);
   const waitedSeconds = Math.round((Date.now() - start) / 1000);
 
   return ok({
-    timedOut: newMessages.length === 0,
+    timedOut: newMessages.length === 0 && newReactions.length === 0,
     after: String(afterId),
     nextAfter,
     newMessages,
+    newReactions,
     polls,
     waitedSeconds,
   });

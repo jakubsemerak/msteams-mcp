@@ -21,7 +21,7 @@
  * 6. Write updated session state back to encrypted storage
  */
 
-import { ASSIGNMENTS_APP_ID, GRAPH_AUDIENCES } from '../constants.js';
+import { ASSIGNMENTS_APP_ID, GRAPH_AUDIENCES, IC3_AUDIENCE } from '../constants.js';
 import {
   readSessionState,
   writeSessionState,
@@ -115,8 +115,11 @@ const ASSIGNMENTS_RESOURCE = 'EduAssignments';
 /** Resource key used by the on-demand Microsoft Graph refresh. */
 const GRAPH_RESOURCE = 'MicrosoftGraph';
 
+/** IC3, used for inline image uploads (AMS). */
+const IC3_RESOURCE = 'ic3.teams.office.com';
+
 /** Optional resources requested only when a tool needs them. */
-export type OnDemandResource = 'assignments' | 'graph';
+export type OnDemandResource = 'assignments' | 'graph' | 'ic3';
 
 /**
  * Optional resources are cached by JWT audience rather than MSAL target, because
@@ -125,6 +128,7 @@ export type OnDemandResource = 'assignments' | 'graph';
 const ON_DEMAND_AUDIENCES: Record<string, readonly string[]> = {
   [ASSIGNMENTS_RESOURCE]: [ASSIGNMENTS_APP_ID],
   [GRAPH_RESOURCE]: GRAPH_AUDIENCES,
+  [IC3_RESOURCE]: [IC3_AUDIENCE],
 };
 
 /** Core scopes are refreshed together; optional resources only on demand. */
@@ -162,6 +166,13 @@ const REFRESH_SCOPES: ReadonlyArray<{ resource: string; scopes: string; onDemand
     scopes: 'https://graph.microsoft.com/.default offline_access',
     onDemand: 'graph',
     label: 'Microsoft Graph',
+  },
+  {
+    /** IC3 (AMS), used to upload inline images. */
+    resource: IC3_RESOURCE,
+    scopes: 'https://ic3.teams.office.com/.default offline_access',
+    onDemand: 'ic3',
+    label: 'Teams image upload',
   },
 ];
 

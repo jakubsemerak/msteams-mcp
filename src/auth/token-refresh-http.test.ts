@@ -544,6 +544,26 @@ describe('refreshTokensViaHttp', () => {
     expect(assignmentsEntry.value).toBe(originalAssignments);
   });
 
+  it('refreshes only IC3 on demand, replacing a stale IC3 token in place', async () => {
+    const state = makeMockSessionState();
+    const jwt = (claims: object) => `eyJhbGciOiJub25lIn0.${Buffer.from(JSON.stringify(claims)).toString('base64url')}.sig`;
+    const ic3Entry = makeAccessTokenEntry('ic3', 'https://ic3.teams.office.com/Teams.AccessAsUser.All');
+    ic3Entry.value = JSON.stringify({ ...JSON.parse(ic3Entry.value), secret: jwt({ aud: 'https://ic3.teams.office.com', exp: Date.now() / 1000 + 600 }) });
+    state.origins[0].localStorage.push(ic3Entry);
+    const accessToken = jwt({ aud: 'https://ic3.teams.office.com', exp: Date.now() / 1000 + 3600 });
+    vi.mocked(readSessionState).mockReturnValue(state);
+    vi.mocked(getTeamsOrigin).mockReturnValue(state.origins[0]);
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({
+      ...makeTokenResponse('https://ic3.teams.office.com/Teams.AccessAsUser.All'), access_token: accessToken,
+    }), { status: 200 }));
+
+    expect(await refreshTokensViaHttp('ic3')).toEqual({ ok: true, value: undefined });
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(new URLSearchParams(vi.mocked(fetch).mock.calls[0][1]!.body as string).get('scope')).toBe('https://ic3.teams.office.com/.default offline_access');
+    expect(JSON.parse(ic3Entry.value).secret).toBe(accessToken);
+  });
+
   it('reports a Graph consent refusal as access denied, not an expired login', async () => {
     const state = makeMockSessionState();
     vi.mocked(readSessionState).mockReturnValue(state);

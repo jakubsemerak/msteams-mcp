@@ -15,6 +15,7 @@ import { stripHtml, extractLinks, buildMessageLink, buildOneOnOneConversationId,
 import { resolveNames } from './profile-api.js';
 import { SELF_CHAT_ID, MRI_ORGID_PREFIX, DEFAULT_WAIT_SECONDS, DEFAULT_WAIT_INTERVAL_SECONDS, MAX_WAIT_SECONDS } from '../constants.js';
 import { formatHumanReadableDate } from './chatsvc-common.js';
+import { uploadInlineImage, inlineImageHtml, type InlineImage } from './ams-api.js';
 import type { RawChatsvcMessage, RawConversationResponse, RawCreateThreadResponse } from '../types/api-responses.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -125,6 +126,8 @@ export interface SendMessageOptions {
    * combined with mentions or a thread reply.
    */
   scheduleAt?: string;
+  /** Local PNG, JPEG or GIF files to upload and show inline below the content. */
+  imagePaths?: string[];
 }
 
 /** Result of getting a 1:1 conversation. */
@@ -193,6 +196,10 @@ export async function sendMessage(
   // Resolve content per the requested content type (markdown by default).
   const resolved = resolveMessageContent(content, contentType);
 
+  if (scheduleAt && options.imagePaths?.length) {
+    return err(createError(ErrorCode.INVALID_INPUT, 'Scheduled messages cannot include images. Remove scheduleAt or images.'));
+  }
+
   // Scheduled send goes through the chatsvc drafts API (same as the Teams web
   // client). Drafts do not support mentions or thread replies.
   if (scheduleAt) {
@@ -230,14 +237,25 @@ export async function sendMessage(
     return ok({ messageId: clientMessageId, scheduledFor: parsedTime.value.iso });
   }
 
+  const images: InlineImage[] = [];
+  for (const imagePath of options.imagePaths ?? []) {
+    const uploaded = await uploadInlineImage(imagePath, conversationId);
+    if (!uploaded.ok) return uploaded;
+    images.push(uploaded.value);
+  }
+  const withImages = withInlineImages(resolved, images);
+
   // Build the message body
   const body: Record<string, unknown> = {
-    content: resolved.content,
-    messagetype: resolved.messagetype,
+    content: withImages.content,
+    messagetype: withImages.messagetype,
     contenttype: 'text',
     imdisplayname: displayName,
     clientmessageid: clientMessageId,
   };
+  if (withImages.amsReferences.length > 0) {
+    body.amsreferences = withImages.amsReferences;
+  }
 
   // Message properties: mentions and/or a channel thread subject.
   const properties: Record<string, unknown> = {};
@@ -1246,6 +1264,26 @@ export function resolveMessageContent(
       return { content: parsed.html, messagetype: 'RichText/Html', mentions: parsed.mentions };
     }
   }
+}
+
+/**
+ * Appends inline images to resolved content. Plain text becomes escaped HTML,
+ * since an image can only be embedded in a RichText/Html message. Pure.
+ */
+export function withInlineImages(
+  resolved: ResolvedContent,
+  images: readonly InlineImage[]
+): ResolvedContent & { amsReferences: string[] } {
+  if (images.length === 0) return { ...resolved, amsReferences: [] };
+  const text = resolved.messagetype === 'Text'
+    ? (resolved.content ? `<p>${escapeHtmlChars(resolved.content).replace(/\r?\n/g, '<br>')}</p>` : '')
+    : resolved.content;
+  return {
+    ...resolved,
+    content: text + images.map(inlineImageHtml).join(''),
+    messagetype: 'RichText/Html',
+    amsReferences: images.map(image => image.id),
+  };
 }
 
 /**

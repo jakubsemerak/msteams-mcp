@@ -5,8 +5,8 @@ import { requireAssignmentsTokenAsync, requireGraphTokenAsync, resetAssignmentsA
 import { ErrorCode, createError } from '../types/errors.js';
 import { err, ok } from '../types/result.js';
 
-vi.mock('../auth/token-extractor.js', () => ({ extractAssignmentsToken: vi.fn(), extractGraphToken: vi.fn() }));
-vi.mock('../auth/token-refresh.js', () => ({ refreshAssignmentsToken: vi.fn(), refreshGraphToken: vi.fn() }));
+vi.mock('../auth/token-extractor.js', () => ({ extractAssignmentsToken: vi.fn(), extractGraphToken: vi.fn(), extractIc3Token: vi.fn() }));
+vi.mock('../auth/token-refresh.js', () => ({ refreshAssignmentsToken: vi.fn(), refreshGraphToken: vi.fn(), refreshIc3Token: vi.fn() }));
 
 beforeEach(() => {
   vi.resetAllMocks();

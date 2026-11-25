@@ -24,6 +24,7 @@ import {
   extractSubstrateToken,
   getValidAssignmentsToken,
   getValidGraphToken,
+  getValidIc3Token,
 } from './token-extractor.js';
 import { clearTokenCache } from './session-store.js';
 import { refreshTokensViaHttp, type OnDemandResource } from './token-refresh-http.js';
@@ -78,6 +79,11 @@ export function refreshAssignmentsToken(): Promise<Result<string>> {
 /** Acquire the optional Microsoft Graph token (used for file downloads). */
 export function refreshGraphToken(): Promise<Result<string>> {
   return refreshOnDemandToken('graph', 'Microsoft Graph', getValidGraphToken);
+}
+
+/** Acquire the IC3 token used to upload inline images. */
+export function refreshIc3Token(): Promise<Result<string>> {
+  return refreshOnDemandToken('ic3', 'Teams image upload', getValidIc3Token);
 }
 
 async function refreshCoreTokens(): Promise<Result<void>> {

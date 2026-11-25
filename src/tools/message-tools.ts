@@ -28,7 +28,7 @@ import {
 import { getFavorites, addFavorite, removeFavorite, getCustomEmojis } from '../api/csa-api.js';
 import { parseTeamsMessageUrl } from '../utils/parsers.js';
 import { ErrorCode, createError } from '../types/errors.js';
-import { SELF_CHAT_ID, MAX_THREAD_LIMIT, DEFAULT_THREAD_LIMIT, MAX_WAIT_SECONDS, STANDARD_EMOJIS } from '../constants.js';
+import { SELF_CHAT_ID, MAX_THREAD_LIMIT, DEFAULT_THREAD_LIMIT, MAX_WAIT_SECONDS, STANDARD_EMOJIS, MAX_INLINE_IMAGES } from '../constants.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Schemas
@@ -41,6 +41,7 @@ export const SendMessageInputSchema = z.object({
   contentType: z.enum(['auto', 'text', 'html', 'markdown']).optional(),
   subject: z.string().optional(),
   scheduleAt: z.string().optional(),
+  images: z.array(z.string().min(1)).max(MAX_INLINE_IMAGES).optional(),
 });
 
 export const FavoriteInputSchema = z.object({
@@ -138,7 +139,7 @@ export const WaitForReplyInputSchema = z.object({
 
 const sendMessageToolDefinition: Tool = {
   name: 'teams_send_message',
-  description: 'Send a message to a Teams conversation. Use markdown for formatting (not HTML): **bold**, *italic*, ~~strikethrough~~, `code`, ```code blocks```, lists, newlines, and tables. Tables use standard markdown table syntax:\n| Item | Price |\n|------|-------|\n| Apple | $1.00 |\n(with a header row, a |---|---| separator row, then data rows — they render as a real table in Teams). Supports @mentions: people with @[Name](mri) (MRI from teams_search_people) and channel tags with @[TagName](tag:tagId) (IDs from teams_get_tags). Markdown links [text](url) support http(s) and mailto. Defaults to self-notes (48:notes). For channel thread replies, provide replyToMessageId. For a new channel thread with a title, provide subject. To schedule for later, provide scheduleAt (ISO 8601). Set contentType to "text" to send content verbatim without markdown interpretation.',
+  description: 'Send a message to a Teams conversation. Use markdown for formatting (not HTML): **bold**, *italic*, ~~strikethrough~~, `code`, ```code blocks```, lists, newlines, and tables. Tables use standard markdown table syntax:\n| Item | Price |\n|------|-------|\n| Apple | $1.00 |\n(with a header row, a |---|---| separator row, then data rows — they render as a real table in Teams). Supports @mentions: people with @[Name](mri) (MRI from teams_search_people) and channel tags with @[TagName](tag:tagId) (IDs from teams_get_tags). Markdown links [text](url) support http(s) and mailto. Defaults to self-notes (48:notes). For channel thread replies, provide replyToMessageId. For a new channel thread with a title, provide subject. To schedule for later, provide scheduleAt (ISO 8601). Set contentType to "text" to send content verbatim without markdown interpretation. To show pictures inline (like pasting them into Teams), provide images with local PNG, JPEG or GIF file paths.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -166,6 +167,11 @@ const sendMessageToolDefinition: Tool = {
       scheduleAt: {
         type: 'string',
         description: 'Schedule the message for future delivery. ISO 8601 (e.g. "2026-04-11T09:00:00Z"); a timezone-less value is treated as UTC. Cannot be combined with @mentions or replyToMessageId.',
+      },
+      images: {
+        type: 'array',
+        items: { type: 'string' },
+        description: `Local PNG, JPEG or GIF file paths to show inline below the content, as if pasted into Teams (max ${MAX_INLINE_IMAGES}). Uploaded to the Teams image service with read access for this conversation only. Cannot be combined with scheduleAt.`,
       },
     },
     required: ['content'],
@@ -559,6 +565,7 @@ async function handleSendMessage(
     contentType: input.contentType,
     subject: input.subject,
     scheduleAt: input.scheduleAt,
+    imagePaths: input.images,
   });
 
   if (!result.ok) {

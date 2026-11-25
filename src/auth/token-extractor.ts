@@ -15,7 +15,7 @@ import {
   type SessionState,
 } from './session-store.js';
 import { parseJwtProfile, type UserProfile } from '../utils/parsers.js';
-import { MRI_TYPE_PREFIX, ORGID_PREFIX, MRI_ORGID_PREFIX, ASSIGNMENTS_APP_ID, GRAPH_AUDIENCES } from '../constants.js';
+import { MRI_TYPE_PREFIX, ORGID_PREFIX, MRI_ORGID_PREFIX, ASSIGNMENTS_APP_ID, GRAPH_AUDIENCES, IC3_AUDIENCE } from '../constants.js';
 
 // ============================================================================
 // JWT Utilities
@@ -189,6 +189,11 @@ export function extractGraphToken(state?: SessionState): SubstrateTokenInfo | nu
   return extractTokenByAudience(GRAPH_AUDIENCES, state);
 }
 
+/** Extracts the IC3 token used for AMS (inline image) uploads; refreshed on demand. */
+export function extractIc3Token(state?: SessionState): SubstrateTokenInfo | null {
+  return extractTokenByAudience([IC3_AUDIENCE], state);
+}
+
 /** Longest-lived unexpired AccessToken whose JWT audience is one of `audiences`. */
 function extractTokenByAudience(audiences: readonly string[], state?: SessionState): SubstrateTokenInfo | null {
   return bestJwt(state, (entry, payload) =>
@@ -224,6 +229,11 @@ export function getValidGraphToken(): string | null {
   return extractGraphToken()?.token ?? null;
 }
 
+/** Gets a valid IC3 token from the session, or null. */
+export function getValidIc3Token(): string | null {
+  return extractIc3Token()?.token ?? null;
+}
+
 /**
  * Extracts the Skype Spaces API token from session state.
  *
@@ -256,6 +266,10 @@ export interface RegionConfig {
   // Extracted base URLs for constructing other endpoints
   /** Teams base URL (e.g., "https://teams.microsoft.com" or "https://teams.microsoft.us" for GCC). */
   teamsBaseUrl: string;
+  /** AMS base URL used in inline image links (e.g. "https://eu-api.asm.skype.com"). */
+  amsUrl?: string;
+  /** AMS v2 gateway used to upload inline images (e.g. "https://eu-prod.asyncgw.teams.microsoft.com"). */
+  amsV2Url?: string;
 }
 
 /**
@@ -333,6 +347,8 @@ export function extractRegionConfig(state?: SessionState): RegionConfig | null {
         chatServiceUrl,
         csaServiceUrl: csaServiceUrl ?? `${teamsBaseUrl}/api/csa/${region}`,
         teamsBaseUrl,
+        amsUrl: data.item?.ams,
+        amsV2Url: data.item?.amsV2,
       };
     } catch {
       continue;

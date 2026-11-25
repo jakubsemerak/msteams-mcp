@@ -11,6 +11,7 @@ import {
   buildMentionsProperty,
   parseContentWithMentionsAndLinks,
   resolveMessageContent,
+  withInlineImages,
   parseScheduleTime,
   buildScheduledDraftBody,
   extractOneOnOneMemberIds,
@@ -422,6 +423,27 @@ describe('senderMriFromChatsvc', () => {
 
   it('returns an empty string for a missing sender', () => {
     expect(senderMriFromChatsvc(undefined)).toBe('');
+  });
+});
+
+describe('withInlineImages', () => {
+  const image = { id: 'obj-1', viewUrl: 'https://eu-api.asm.skype.com/v1/objects/obj-1/views/imgo', width: 96, height: 96 };
+
+  it('appends the image tags to HTML content and lists the AMS references', () => {
+    const result = withInlineImages({ content: '<p>look</p>', messagetype: 'RichText/Html', mentions: [] }, [image]);
+    expect(result.content).toBe('<p>look</p><p><img src="https://eu-api.asm.skype.com/v1/objects/obj-1/views/imgo" itemtype="http://schema.skype.com/AMSImage" itemscope="" width="96" height="96" alt="image" id="x_obj-1" itemid="obj-1"></p>');
+    expect(result.amsReferences).toEqual(['obj-1']);
+  });
+
+  it('turns plain text into escaped HTML so the image can be embedded', () => {
+    const result = withInlineImages({ content: 'a < b\nnext', messagetype: 'Text', mentions: [] }, [image]);
+    expect(result.messagetype).toBe('RichText/Html');
+    expect(result.content.startsWith('<p>a &lt; b<br>next</p><p><img ')).toBe(true);
+  });
+
+  it('sends only the image when there is no text', () => {
+    const result = withInlineImages({ content: '', messagetype: 'Text', mentions: [] }, [image]);
+    expect(result.content.startsWith('<p><img ')).toBe(true);
   });
 });
 

@@ -253,6 +253,23 @@ export const ASSIGNMENTS_APP_ID = '8f348934-64be-4bb2-bc16-c54c96789f43';
 /** Microsoft Graph token audiences: MSAL caches either the URL or the app ID. */
 export const GRAPH_AUDIENCES: readonly string[] = ['https://graph.microsoft.com', '00000003-0000-0000-c000-000000000000'];
 
+/** JWT audience of the IC3 token that AMS (inline images) accepts. */
+export const IC3_AUDIENCE = 'https://ic3.teams.office.com';
+
+/** Client headers Teams web sends to AMS; AMS rejects requests it cannot map to a Teams platform. */
+export const AMS_CLIENT_HEADERS: Readonly<Record<string, string>> = {
+  'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36',
+  'X-Ms-Client-Version': '1415/26101515220',
+  'X-Ams-Post-Sharing-Mode': 'Inline',
+  'X-Ms-Migration': 'True',
+};
+
+/** Inline images taller than this are shown scaled down, as Teams does. */
+export const INLINE_IMAGE_MAX_HEIGHT = 250;
+
+/** Maximum inline images in one message. */
+export const MAX_INLINE_IMAGES = 10;
+
 /**
  * Teams web hosts, in the order a session's origins should be preferred.
  *

@@ -365,7 +365,7 @@ export async function getMessage(
 
   const content = msg.content || '';
   const contentType = msg.messagetype || 'Text';
-  const fromMri = msg.from || '';
+  const fromMri = senderMriFromChatsvc(msg.from);
   const displayName = msg.imdisplayname || msg.displayName;
 
   const timestamp = msg.originalarrivaltime ||
@@ -488,7 +488,7 @@ export async function getThreadMessages(
     const content = msg.content || '';
     const contentType = msg.messagetype || 'Text';
 
-    const fromMri = msg.from || '';
+    const fromMri = senderMriFromChatsvc(msg.from);
     const displayName = msg.imdisplayname || msg.displayName;
 
     const timestamp = msg.originalarrivaltime ||
@@ -834,7 +834,7 @@ export async function extractParticipantNames(
   const senderNames = new Set<string>();
   for (const msg of messages) {
     const m = msg as RawChatsvcMessage;
-    const fromMri = m.from || '';
+    const fromMri = senderMriFromChatsvc(m.from);
     const displayName = m.imdisplayname;
 
     if (fromMri === auth.userMri || !displayName) {
@@ -1456,6 +1456,14 @@ export function resolveWaitBaseline(
     if (m.isFromMe) ownMax = Math.max(ownMax, id);
   }
   return ownMax > 0 ? ownMax : anyMax;
+}
+
+/** chatsvc sends `from` as a contact URL ending in the MRI; returns the bare MRI. */
+export function senderMriFromChatsvc(from: string | undefined): string {
+  if (!from) return '';
+  const marker = '/contacts/';
+  const index = from.lastIndexOf(marker);
+  return index >= 0 ? from.slice(index + marker.length) : from;
 }
 
 const sleep = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));

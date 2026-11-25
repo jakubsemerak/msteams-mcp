@@ -18,6 +18,7 @@ import {
   clampWaitParams,
   selectNewMessages,
   resolveWaitBaseline,
+  senderMriFromChatsvc,
   generateClientMessageId,
   buildThreadMessagesUrl,
   cursorFromBackwardLink,
@@ -361,6 +362,21 @@ describe('selectNewMessages', () => {
 
   it('returns empty when nothing is newer than afterId', () => {
     expect(selectNewMessages(msgs, 110, true)).toEqual([]);
+  });
+});
+
+describe('senderMriFromChatsvc', () => {
+  it('extracts the MRI from a chatsvc contact URL', () => {
+    expect(senderMriFromChatsvc('https://teams.cloud.microsoft/api/chatsvc/emea/v1/users/ME/contacts/8:orgid:abc'))
+      .toBe('8:orgid:abc');
+  });
+
+  it('passes a bare MRI through unchanged', () => {
+    expect(senderMriFromChatsvc('8:orgid:abc')).toBe('8:orgid:abc');
+  });
+
+  it('returns an empty string for a missing sender', () => {
+    expect(senderMriFromChatsvc(undefined)).toBe('');
   });
 });
 

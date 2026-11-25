@@ -76,7 +76,7 @@ describe('uploadInlineImage', () => {
   const region = { amsUrl: 'https://eu-api.asm.skype.com', amsV2Url: 'https://eu-prod.asyncgw.teams.microsoft.com' };
 
   beforeEach(async () => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     dir = await mkdtemp(join(tmpdir(), 'ams-test-'));
     imagePath = join(dir, 'shot.png');
     await writeFile(imagePath, png(300, 150));
@@ -127,6 +127,40 @@ describe('uploadInlineImage', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe(ErrorCode.API_ERROR);
     expect(httpRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it('reports a 403 from the image service as access denied, never as an auth error', async () => {
+    vi.mocked(httpRequest).mockResolvedValueOnce(err(createError(ErrorCode.AUTH_REQUIRED, 'HTTP 403: Forbidden')));
+
+    const result = await uploadInlineImage(imagePath, '48:notes');
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe(ErrorCode.ACCESS_DENIED);
+  });
+
+  it('retries the whole upload with a fresh token when the byte upload gets 401', async () => {
+    vi.mocked(requireIc3TokenAsync).mockResolvedValueOnce(ok('stale-token')).mockResolvedValueOnce(ok('fresh-token'));
+    vi.mocked(httpRequest)
+      .mockResolvedValueOnce(ok({ status: 201, headers: new Headers(), data: { id: 'obj-a' } }))
+      .mockResolvedValueOnce(err(createError(ErrorCode.AUTH_EXPIRED, 'HTTP 401: Unauthorized')))
+      .mockResolvedValueOnce(ok({ status: 201, headers: new Headers(), data: { id: 'obj-b' } }))
+      .mockResolvedValueOnce(ok({ status: 201, headers: new Headers(), data: '' }));
+
+    const result = await uploadInlineImage(imagePath, '48:notes');
+
+    expect(result.ok && result.value.id).toBe('obj-b');
+    expect(invalidateAccessToken).toHaveBeenCalledWith('stale-token');
+  });
+
+  it('reports a 403 on the byte upload as access denied', async () => {
+    vi.mocked(httpRequest)
+      .mockResolvedValueOnce(ok({ status: 201, headers: new Headers(), data: { id: 'obj-c' } }))
+      .mockResolvedValueOnce(err(createError(ErrorCode.AUTH_REQUIRED, 'HTTP 403: Forbidden')));
+
+    const result = await uploadInlineImage(imagePath, '48:notes');
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe(ErrorCode.ACCESS_DENIED);
   });
 
   it('rejects a file that is not a PNG, JPEG or GIF before any network call', async () => {

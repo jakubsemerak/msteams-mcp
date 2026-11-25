@@ -14,7 +14,7 @@ import { httpRequest } from '../utils/http.js';
 import { requireIc3TokenAsync, getRegionConfig } from '../utils/auth-guards.js';
 import { invalidateAccessToken } from '../auth/token-extractor.js';
 import { escapeHtmlChars } from '../utils/parsers.js';
-import { ErrorCode, createError } from '../types/errors.js';
+import { ErrorCode, createError, type McpError } from '../types/errors.js';
 import { type Result, ok, err } from '../types/result.js';
 import { AMS_CLIENT_HEADERS, INLINE_IMAGE_MAX_HEIGHT } from '../constants.js';
 
@@ -71,9 +71,24 @@ export function inlineImageHtml(image: InlineImage): string {
 }
 
 /**
+ * Maps an AMS auth failure so it never reaches the server's auto-login: a 401
+ * discards the token and asks for one retry, a 403 becomes ACCESS_DENIED.
+ */
+function amsAuthError(error: McpError, token: string): { retry: boolean; error?: McpError } | null {
+  if (error.code === ErrorCode.AUTH_EXPIRED) {
+    invalidateAccessToken(token);
+    return { retry: true };
+  }
+  if (error.code === ErrorCode.AUTH_REQUIRED) {
+    return { retry: false, error: createError(ErrorCode.ACCESS_DENIED, `The Teams image service refused the upload: ${error.message}`, { retryable: false }) };
+  }
+  return null;
+}
+
+/**
  * Uploads a local PNG, JPEG or GIF to AMS with read access for the conversation.
  * A rejected IC3 token is discarded and the upload retried once with a fresh one;
- * a second rejection is reported as API_ERROR so it never triggers auto-login.
+ * auth failures are never returned as AUTH_EXPIRED/AUTH_REQUIRED.
  */
 export async function uploadInlineImage(filePath: string, conversationId: string): Promise<Result<InlineImage>> {
   let bytes: Buffer;
@@ -97,30 +112,33 @@ export async function uploadInlineImage(filePath: string, conversationId: string
   for (let attempt = 1; attempt <= 2; attempt++) {
     const tokenResult = await requireIc3TokenAsync();
     if (!tokenResult.ok) return tokenResult;
-    const headers = { ...AMS_CLIENT_HEADERS, Accept: 'application/json', Authorization: `Bearer ${tokenResult.value}` };
+    const token = tokenResult.value;
+    const headers = { ...AMS_CLIENT_HEADERS, Accept: 'application/json', Authorization: `Bearer ${token}` };
 
     const created = await httpRequest<{ id?: string }>(`${gatewayUrl}/v1/objects/`, {
       method: 'POST',
       headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({ type: 'pish/image', permissions: { [conversationId]: ['read'] }, sharingMode: 'Inline', filename: basename(filePath) }),
     });
-    if (!created.ok && created.error.code === ErrorCode.AUTH_EXPIRED) {
-      invalidateAccessToken(tokenResult.value);
-      if (attempt === 1) continue;
-      return err(createError(ErrorCode.API_ERROR, 'The Teams image service rejected the IC3 token twice.', { retryable: true }));
+    let failure = created.ok ? null : created.error;
+    const id = created.ok ? created.value.data?.id : undefined;
+    if (created.ok && !id) return err(createError(ErrorCode.API_ERROR, 'The Teams image service returned no object id.'));
+
+    if (id) {
+      const uploaded = await httpRequest(`${gatewayUrl}/v1/objects/${encodeURIComponent(id)}/content/imgpsh`, {
+        method: 'PUT',
+        headers: { ...headers, 'Content-Type': 'application/octet-stream' },
+        body: new Uint8Array(bytes),
+      });
+      if (uploaded.ok) {
+        return ok({ id, viewUrl: `${amsUrl}/v1/objects/${encodeURIComponent(id)}/views/imgo`, ...dimensions });
+      }
+      failure = uploaded.error;
     }
-    if (!created.ok) return created;
-    const id = created.value.data?.id;
-    if (!id) return err(createError(ErrorCode.API_ERROR, 'The Teams image service returned no object id.'));
 
-    const uploaded = await httpRequest(`${gatewayUrl}/v1/objects/${encodeURIComponent(id)}/content/imgpsh`, {
-      method: 'PUT',
-      headers: { ...headers, 'Content-Type': 'application/octet-stream' },
-      body: new Uint8Array(bytes),
-    });
-    if (!uploaded.ok) return uploaded;
-
-    return ok({ id, viewUrl: `${amsUrl}/v1/objects/${encodeURIComponent(id)}/views/imgo`, ...dimensions });
+    const auth = amsAuthError(failure!, token);
+    if (!auth) return err(failure!);
+    if (auth.error) return err(auth.error);
   }
-  return err(createError(ErrorCode.API_ERROR, 'Inline image upload failed.'));
+  return err(createError(ErrorCode.API_ERROR, 'The Teams image service rejected the IC3 token twice.', { retryable: true }));
 }
